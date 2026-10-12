@@ -114,6 +114,7 @@ jobs:
         if: always()
         with:
           name: sca-reports
+          if-no-files-found: error
           path: |
-            build/reports/dependency-check-report.html
-            build/reports/dependency-check-report.json
+            build/reports/dependency-check/dependency-check-report.html
+            build/reports/dependency-check/dependency-check-report.json
