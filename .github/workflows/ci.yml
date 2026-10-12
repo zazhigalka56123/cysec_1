@@ -61,12 +61,32 @@ jobs:
           reports = list(Path('build/reports/codeql').glob('*.sarif'))
           if not reports:
               raise SystemExit('CodeQL report is missing')
-          findings = sum(
-              len(run.get('results', []))
-              for report in reports
-              for run in json.loads(report.read_text())['runs']
-          )
-          print(f'CodeQL findings: {findings}')
+          findings = 0
+          accepted = 0
+          for report in reports:
+              for run in json.loads(report.read_text())['runs']:
+                  for result in run.get('results', []):
+                      locations = result.get('locations', [])
+                      location = (
+                          locations[0].get('physicalLocation', {})
+                          if len(locations) == 1 else {}
+                      )
+
+                      # Bearer JWT only; no cookie authentication. Revisit if authentication changes.
+                      csrf_exception = (
+                          result.get('ruleId')
+                          == 'java/spring-disabled-csrf-protection'
+                          and location.get('artifactLocation', {}).get('uri')
+                          == 'src/main/kotlin/ru/itmo/lab/notes/security/SecurityConfiguration.kt'
+                          and location.get('region', {}).get('startLine') == 43
+                      )
+
+                      if csrf_exception:
+                          accepted += 1
+                          print('Accepted: CSRF disabled for Bearer-only API')
+                      else:
+                          findings += 1
+          print(f'CodeQL findings: {findings + accepted}; accepted: {accepted}; blocking: {findings}')
           if findings:
               raise SystemExit('Review and fix the CodeQL findings')
           PY
