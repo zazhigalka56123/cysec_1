@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:notes-test;DB_CLOSE_DELAY=-1
+    password: test-database-password
+
+security:
+  default-user:
+    username: student
+    password: test-password

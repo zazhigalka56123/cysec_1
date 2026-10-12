@@ -1,0 +1,99 @@
+name: Security CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --quiet --no-daemon build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: build/reports/tests/
+
+  sast:
+    name: SAST - CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+      - run: ./gradlew --quiet --no-daemon --no-build-cache -Pkotlin.compiler.execution.strategy=in-process clean classes
+      - uses: github/codeql-action/analyze@v4
+        with:
+          output: build/reports/codeql
+      - name: Fail on SAST findings
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          reports = list(Path('build/reports/codeql').glob('*.sarif'))
+          if not reports:
+              raise SystemExit('CodeQL report is missing')
+          findings = sum(
+              len(run.get('results', []))
+              for report in reports
+              for run in json.loads(report.read_text())['runs']
+          )
+          print(f'CodeQL findings: {findings}')
+          if findings:
+              raise SystemExit('Review and fix the CodeQL findings')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sast-reports
+          path: build/reports/codeql/
+
+  sca:
+    name: SCA - OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --quiet --no-daemon dependencyCheckAnalyze
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sca-reports
+          path: |
+            build/reports/dependency-check-report.html
+            build/reports/dependency-check-report.json
